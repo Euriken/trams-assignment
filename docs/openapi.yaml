@@ -1,0 +1,410 @@
+openapi: 3.0.3
+info:
+  title: Microservices API
+  description: |
+    REST API for the Microservices Backend.
+    All requests (except `/auth/token` and `/health`) require JWT Bearer authentication.
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:3000
+    description: Local development (API Gateway)
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateUser:
+      type: object
+      required: [email, name]
+      properties:
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: John Doe
+
+    UpdateUser:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          example: john.updated@example.com
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: John Updated
+      minProperties: 1
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        total:
+          type: integer
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum: [user.created, user.updated]
+        channel:
+          type: string
+          enum: [email, sms, push]
+        status:
+          type: string
+          enum: [pending, sent, failed]
+        content:
+          type: string
+        error:
+          type: string
+          nullable: true
+        retryCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        total:
+          type: integer
+
+    TokenRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: test@example.com
+        sub:
+          type: string
+          description: Optional subject identifier
+          example: user-123
+
+    TokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresIn:
+          type: string
+          example: 24h
+        tokenType:
+          type: string
+          example: Bearer
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        nats:
+          type: string
+          enum: [connected, disconnected]
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation Error
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /auth/token:
+    post:
+      summary: Generate JWT Token
+      description: Generate a JWT token for API authentication. Development convenience endpoint.
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /health:
+    get:
+      summary: Gateway Health Check
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/users:
+    post:
+      summary: Create User
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUser'
+      responses:
+        '201':
+          description: User created. Triggers user.created event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: List Users
+      tags: [Users]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '401':
+          description: Unauthorized
+
+  /api/users/{id}:
+    get:
+      summary: Get User by ID
+      tags: [Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+
+    put:
+      summary: Update User
+      description: Updates user fields. Triggers user.updated event if data changed.
+      tags: [Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUser'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '409':
+          description: Email already exists
+
+    delete:
+      summary: Delete User
+      tags: [Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User deleted
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+
+  /api/users/health:
+    get:
+      summary: User Service Health Check
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/notifications/{userId}:
+    get:
+      summary: Get Notifications by User ID
+      tags: [Notifications]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notifications list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '400':
+          description: Invalid user ID format
+        '401':
+          description: Unauthorized
+
+  /api/notifications/health:
+    get:
+      summary: Notification Service Health Check
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'

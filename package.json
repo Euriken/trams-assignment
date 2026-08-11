@@ -1,0 +1,35 @@
+{
+  "name": "internship-microservices",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Microservices backend with API Gateway, User Service, and Notification Service using NATS JetStream",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:shared": "npm run build -w packages/shared",
+    "build:gateway": "npm run build -w services/api-gateway",
+    "build:user": "npm run build -w services/user-service",
+    "build:notification": "npm run build -w services/notification-service",
+    "lint": "eslint 'packages/*/src/**/*.ts' 'services/*/src/**/*.ts'",
+    "test": "npm run test --workspaces --if-present",
+    "test:user": "npm run test -w services/user-service",
+    "test:notification": "npm run test -w services/notification-service",
+    "test:gateway": "npm run test -w services/api-gateway",
+    "dev:gateway": "npm run dev -w services/api-gateway",
+    "dev:user": "npm run dev -w services/user-service",
+    "dev:notification": "npm run dev -w services/notification-service",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down -v",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.5.0"
+  }
+}

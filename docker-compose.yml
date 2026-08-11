@@ -1,0 +1,152 @@
+services:
+  # --- Infrastructure ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: ms-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      USERS_DB_NAME: ${USERS_DB_NAME}
+      NOTIFICATIONS_DB_NAME: ${NOTIFICATIONS_DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - microservices
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: ms-nats
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    environment:
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - ./infra/docker/nats-server.conf:/etc/nats/nats-server.conf
+      - nats_data:/data/jetstream
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - microservices
+
+  # --- Services ---
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: ms-user-service
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${USER_SERVICE_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${USERS_DB_NAME}
+      NATS_URL: ${NATS_URL}
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "${USER_SERVICE_PORT}:${USER_SERVICE_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${USER_SERVICE_PORT}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - microservices
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: ms-notification-service
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${NOTIFICATION_SERVICE_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${NOTIFICATIONS_DB_NAME}
+      NATS_URL: ${NATS_URL}
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT}:${NOTIFICATION_SERVICE_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${NOTIFICATION_SERVICE_PORT}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - microservices
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: ms-api-gateway
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${API_GATEWAY_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      USER_SERVICE_URL: ${USER_SERVICE_URL}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${API_GATEWAY_PORT}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - microservices
+
+volumes:
+  postgres_data:
+  nats_data:
+
+networks:
+  microservices:
+    driver: bridge
