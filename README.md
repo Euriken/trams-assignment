@@ -549,7 +549,7 @@ curl http://localhost:3000/api/notifications/<USER_ID> \
 To test the failure and redelivery mechanism:
 ```bash
 # Restart notification service with simulated failures
-docker compose up -d notification-service -e SIMULATE_FAILURE_EVERY_N=2
+SIMULATE_FAILURE_EVERY_N=2 docker compose up -d notification-service
 
 # Or set in .env:
 # SIMULATE_FAILURE_EVERY_N=2
